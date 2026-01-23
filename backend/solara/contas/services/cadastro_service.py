@@ -1,11 +1,11 @@
 import re
 from django.db import transaction
+import logging
+audit_logger = logging.getLogger("audit")
 
 from core.error import Erro
-
+from core.services import PermissaoService
 from contas.models import Usuario, Pessoa
-
-
 
 class CadastroService():
     
@@ -44,11 +44,19 @@ class CadastroService():
         )
 
         nova_pessoa.save()
-
+        audit_logger.info(
+            "Pessoa criada",
+            extra={
+                "domain": "cadastro",
+                "entidade": "Pessoa",
+                "acao": "criar",
+                "pessoa_id": nova_pessoa.id,
+                "usuario": usuario_logado.id,
+                "empresa": usuario_logado.empresa_vinculada,
+            }
+        )
         return nova_pessoa
-        
-    
-    
+            
     @classmethod
     def _antes_criar(cls, *, usuario_logado, data):
         erro_base = {
@@ -61,85 +69,97 @@ class CadastroService():
             },
         }
 
+        erro = cls._permissao(
+            usuario_logado=usuario_logado,
+            data=data,
+            erro_base=erro_base
+            )
+        if erro:
+            return erro
+
         data["cpf"] = cls._normalizar_cpf(data["cpf"])
         data["telefone"] = cls._normalizar_telefone(data["telefone"])
         data["primeiro_nome"], data["ultimo_nome"] = cls._normalizar_nome(data["nome_completo"])
 
-        cls._validar(data = data, erro_base = erro_base)   
+        
+        return cls._validar(data = data, erro_base = erro_base)   
+   
     @classmethod
     def _validar(cls, *, data, erro_base):
-        
+        erros = []
+
         # Usuario
-        if Usuario.objects.filter(username = data["username"]).exists():
-            return Erro(
-                **erro_base,
-                mensagem = "Usuário já existente",
-                field = "username",
-                status_code = 409,
-                data = {
-                    "username" : data["username"]
-                }
-            )
-        
-        if Usuario.objects.filter(email = data["email"]).exists():
-            return Erro(
-                **erro_base,
-                mensagem = "Usuário já existente",
-                field = "email",
-                status_code = 409,
-                data = {
-                    "email" : data["email"]
-                }
-            )
-        
-        if Usuario.objects.filter(username = data["username"]).exists():
-            return Erro(
-                **erro_base,
-                mensagem = "Usuário já existente",
-                field = "username",
-                status_code = 409,
-                data = {
-                    "username" : data["username"]
-                }
-            )
+        if Usuario.objects.filter(username=data["username"]).exists():
+            erros.append({
+                "field": "username",
+                "mensagem": "Usuário já existente",
+                "value": data["username"]
+            })
+
+        if Usuario.objects.filter(email=data["email"]).exists():
+            erros.append({
+                "field": "email",
+                "mensagem": "Usuário já existente",
+                "value": data["email"]
+            })
 
         # Pessoa
-        if Pessoa.objects.filter(cpf = data["cpf"]).exists():
-            return Erro(
-                **erro_base,
-                mensagem = "Usuário já existente",
-                field = "cpf",
-                status_code = 409,
-                data = {
-                    "cpf" : data["cpf"]
-                }
-            )
-        
-        if Pessoa.objects.filter(email_contato = data["email_contato"]).exists():
-            return Erro(
-                **erro_base,
-                mensagem = "Usuário já existente",
-                field = "email_contato",
-                status_code = 409,
-                data = {
-                    "email_contato" : data["email_contato"]
-                }
-            )
-        
-        if Pessoa.objects.filter(telefone = data["telefone"]).exists():
-            return Erro(
-                **erro_base,
-                mensagem = "Usuário já existente",
-                field = "telefone",
-                status_code = 409,
-                data = {
-                    "telefone" : data["telefone"]
-                }
-            )
-    
-        return None
-    # Normalização
+        if Pessoa.objects.filter(cpf=data["cpf"]).exists():
+            erros.append({
+                "field": "cpf",
+                "mensagem": "CPF já cadastrado",
+                "value": data["cpf"]
+            })
 
+        if Pessoa.objects.filter(email_contato=data["email_contato"]).exists():
+            erros.append({
+                "field": "email_contato",
+                "mensagem": "Email já cadastrado",
+                "value": data["email_contato"]
+            })
+
+        if Pessoa.objects.filter(telefone=data["telefone"]).exists():
+            erros.append({
+                "field": "telefone",
+                "mensagem": "Telefone já cadastrado",
+                "value": data["telefone"]
+            })
+
+        if erros:
+            return Erro(
+                **erro_base,
+                mensagem="Erro de validação",
+                field=None,
+                status_code=409,
+                data={
+                    "erros": erros
+                }
+            )
+
+        return None
+
+    @classmethod
+    def _permissao(cls, *, usuario_logado, data, erro_base):
+        permissao = PermissaoService(usuario_logado)
+
+        perfil_logado = permissao.perfil_logado()
+
+        if perfil_logado not in ["EMPRESA", Pessoa.TipoPerfil.GERENTE]:
+            return Erro(
+                **erro_base,
+                mensagem = "Usuário sem permissão para cadastro",
+                status_code = 403
+            )
+        
+        if data["tipo_perfil"] == Pessoa.TipoPerfil.GERENTE and perfil_logado != "EMPRESA":
+            return Erro(
+                **erro_base,
+                mensagem = "Usuário sem permissão para cadastro",
+                extra = "Apenas a empresa pode cadastrar gerentes",
+                status_code = 403
+            )
+
+    # Normalização
     @staticmethod
     def _normalizar_cpf(cpf):
         return re.sub(r"\D", "", cpf or "")

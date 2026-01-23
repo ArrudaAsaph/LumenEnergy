@@ -1,1 +1,2 @@
 from .cadastro_request import CadastroUsuarioRequest
+from .usuario_request import UsuarioUpdateRequest

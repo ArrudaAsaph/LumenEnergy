@@ -13,7 +13,7 @@ class LoginView(APIView):
         serializer = LoginRequest(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        result = LoginService.login(serializer.validated_data)
+        resultado = LoginService.login(data = serializer.validated_data)
 
-        response = LoginResponse(result)
+        response = LoginResponse(resultado)
         return Response(response.data)

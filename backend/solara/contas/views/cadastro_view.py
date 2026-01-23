@@ -11,30 +11,42 @@ from contas.serializers import (
 )
 from contas.services import CadastroService
 
+from core.error import Erro
 
 class CadastroView(APIView):
-    
+    permission_classes = [IsAuthenticated]
 
     @swagger_auto_schema(
         operation_summary="Cadastra uma pessoa",
-        request_body = CadastroUsuarioRequest,
-        responses = {201: PessoaResponse},
-        tags=["Cadastro"],
+        request_body=CadastroUsuarioRequest,
+        responses={
+            201: PessoaResponse,
+            400: openapi.Response("Erro de validação"),
+            401: openapi.Response("Não autenticado"),
+            403: openapi.Response("Sem permissão"),
+            409: openapi.Response("Conflito"),
+        },
+        tags=["Cadastro"]
     )
     
     def post(self, request):
         serializer = CadastroUsuarioRequest(data=request.data)
         serializer.is_valid(raise_exception=True)
-        usuario = CadastroService.criar(data=serializer.validated_data, usuario_logado = request.user)
-        
-        response_serializer = PessoaResponse({
-            "usuario": usuario,
-            "pessoa": usuario.pessoa
-            })
-        
+
+        resultado = CadastroService.criar(
+            data=serializer.validated_data,
+            usuario_logado=request.user
+        )
+
+        if isinstance(resultado, Erro):
+            return Response(
+                resultado.to_response(),
+                status=resultado.status_code
+            )
+
+        response_serializer = PessoaResponse(resultado)
+
         return Response(
             response_serializer.data,
             status=status.HTTP_201_CREATED
         )
-    
-    
