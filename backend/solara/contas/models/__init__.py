@@ -1,5 +1,5 @@
-from usuario import Usuario
+from .usuario import Usuario
 
-from empresa import Empresa
+from .empresa import Empresa
 
-from pessoa import Pessoa
+from .pessoa import Pessoa

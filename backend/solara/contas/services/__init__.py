@@ -1,0 +1,1 @@
+from .cadastro_service import CadastroService

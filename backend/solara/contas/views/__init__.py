@@ -1,0 +1,1 @@
+from .cadastro_view import CadastroView

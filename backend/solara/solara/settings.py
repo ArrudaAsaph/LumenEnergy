@@ -30,6 +30,7 @@ INSTALLED_APPS = [
 
     # APPS
     'contas',
+    'core',
 ]
 # ========= CONFIG =============
 SWAGGER_SETTINGS = {
